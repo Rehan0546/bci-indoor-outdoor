@@ -1,73 +1,63 @@
-# fNIRS Hemodynamic Comparative Analysis
+# fNIRS Hemodynamic Analysis: Indoor vs. Outdoor Environments
 
-This repository contains a Python-based pipeline for analyzing **Functional Near-Infrared Spectroscopy (fNIRS)** data. The script automates the extraction, statistical testing, and visualization of hemoglobin concentration changes across two experimental conditions: **Indoor** and **Outdoor** environments.
-
----
-
-## ## Overview
-
-The analysis focuses on two primary chromophores:
-1.  **HbO** (Oxygenated Hemoglobin)
-2.  **HbR** (Deoxygenated Hemoglobin)
-
-By processing raw `.snirf` files, the script evaluates whether environmental transitions significantly impact cortical hemodynamic responses using a paired-sample experimental design.
+This repository contains a Python pipeline for processing and analyzing **Functional Near-Infrared Spectroscopy (fNIRS)** data. The script compares cortical hemodynamic responses—specifically oxygenated hemoglobin (**HbO**) and deoxygenated hemoglobin (**HbR**)—between two experimental conditions: **Indoor** and **Outdoor**.
 
 ---
 
-## ## Key Features
+### Analysis Overview
 
-* **SNIRF Integration**: Utilizes `mne-nirs` for high-level handling of Near-Infrared Spectroscopy Data Format (SNIRF).
-* **Dual Statistical Testing**:
-    * **Paired T-Test**: For parametric evaluation of mean differences.
-    * **Wilcoxon Signed-Rank Test**: A non-parametric alternative for robust analysis against outliers or non-normal distributions.
-* **Automated Batch Processing**: Iterates through subject folders to calculate per-subject means for both conditions.
-* **Visual Analytics**: Generates comparative boxplots to illustrate data spread, medians, and variance.
+The script automates the transition from raw data to statistical results. It handles data loading via `mne-nirs`, extracts mean chromophore concentrations for each subject, and performs comparative statistics to identify significant physiological differences across environments.
 
 ---
 
-## ## Requirements
+### Data Structure
 
-Ensure you have the following dependencies installed:
+The pipeline is designed to navigate a nested directory structure where each subject has their own folder within the condition directory:
 
+* **Indoor Folder:** `/Indoor/sub1/file.snirf`, `/Indoor/sub2/file.snirf`...
+* **Outdoor Folder:** `/Outdoor/sub1/file.snirf`, `/Outdoor/sub2/file.snirf`...
+
+The script uses alphabetical sorting to ensure that subject data is correctly paired between the two conditions for the statistical tests.
+
+---
+
+### Key Features
+
+* **Nested Directory Traversal:** Automatically searches through subject subfolders to locate `.snirf` files.
+* **Hemodynamic Extraction:** Filters and extracts mean values for both **HbO** and **HbR** channels using MNE-Python.
+* **Dual Statistical Testing:**
+    * **Paired T-test:** For parametric analysis of mean differences.
+    * **Wilcoxon Signed-Rank Test:** For non-parametric analysis, providing robustness against non-normal distributions or outliers.
+* **Data Visualization:** Generates boxplots for each chromophore to visualize medians, quartiles, and variance across conditions.
+
+---
+
+### Requirements
+
+The following dependencies are required to run the analysis:
+
+* **mne** & **mne-nirs**: For SNIRF file handling and NIRS processing.
+* **numpy**: For numerical operations and array management.
+* **scipy**: For performing paired statistical tests.
+* **matplotlib**: For generating distribution boxplots.
+
+Install them via pip:
 ```bash
 pip install mne mne-nirs numpy scipy matplotlib
 ```
 
 ---
 
-## ## Data Structure
+### Usage
 
-The script expects the following directory structure (default paths are configured for Google Colab/Drive):
-
-```text
-/Rehan_Dataset/
-├── Indoor/
-│   ├── subject_01.snirf
-│   ├── subject_02.snirf ...
-└── Outdoor/
-    ├── subject_01.snirf
-    ├── subject_02.snirf ...
-```
-
-> [!IMPORTANT]  
-> The script uses `sorted()` on file names. Ensure that files in both folders are named consistently so that `subject_01` in the Indoor folder matches `subject_01` in the Outdoor folder for accurate paired testing.
+1. **Configure Paths:** Update the `indoor_folder` and `outdoor_folder` variables in the script to match your local or Drive directory.
+2. **Execute:** Run the script. It will print the Mean ± Standard Deviation for both conditions, output the $p$-values for both statistical tests, and display the distribution plots.
+3. **Interpret Results:** A $p < 0.05$ typically indicates a significant difference in hemodynamic activity between the Indoor and Outdoor environments.
 
 ---
 
-## ## Usage
+### Statistical Metrics Provided
 
-1.  Clone this repository.
-2.  Update the `indoor_folder` and `outdoor_folder` variables in the script to point to your data.
-3.  Run the script:
-    ```bash
-    python nirs_analysis.py
-    ```
-
----
-
-## ## Output Metrics
-
-For each chromophore (HbO/HbR), the script provides:
-* **Descriptive Stats**: Mean and Standard Deviation ($\sigma$) for both conditions.
-* **Statistical Significance**: $t$-statistics, $W$-statistics, and $p$-values.
-* **Distribution Plots**: Boxplots showing the interquartile range (IQR) and potential outliers.
+* **Descriptive Stats:** Mean and Standard Deviation for both environments.
+* **T-Statistic & P-Value:** Results from the parametric Paired T-test.
+* **W-Statistic & P-Value:** Results from the non-parametric Wilcoxon Signed-Rank test.
