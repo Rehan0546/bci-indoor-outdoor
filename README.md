@@ -1,63 +1,146 @@
-# fNIRS Hemodynamic Analysis: Indoor vs. Outdoor Environments
+fNIRS Indoor and Outdoor Signal Quality Analysis
 
-This repository contains a Python pipeline for processing and analyzing **Functional Near-Infrared Spectroscopy (fNIRS)** data. The script compares cortical hemodynamic responses—specifically oxygenated hemoglobin (**HbO**) and deoxygenated hemoglobin (**HbR**)—between two experimental conditions: **Indoor** and **Outdoor**.
+This repository contains the preprocessing and quality assessment pipeline used for evaluating indoor and outdoor fNIRS recordings stored in SNIRF format.
 
----
+The implementation focuses on:
 
-### Analysis Overview
+* preprocessing transparency
+* HbO and HbR validation
+* raw intensity signal quality assessment
+* motion artifact estimation
+* global signal contamination analysis
+* indoor versus outdoor comparison
 
-The script automates the transition from raw data to statistical results. It handles data loading via `mne-nirs`, extracts mean chromophore concentrations for each subject, and performs comparative statistics to identify significant physiological differences across environments.
+The pipeline was developed in response to reviewer concerns regarding:
 
----
+* validity of HbR signals
+* preprocessing correctness
+* potential systemic/global contamination
+* interpretation of signal quality metrics
 
-### Data Structure
+Features
 
-The pipeline is designed to navigate a nested directory structure where each subject has their own folder within the condition directory:
+* Automatic recursive SNIRF file loading
+* Indoor and outdoor file separation using file paths
+* Optical density conversion
+* Notch filtering
+* Bandpass filtering
+* Motion artifact correction using TDDR
+* Beer–Lambert conversion
+* Baseline correction
+* Downsampling to 10 Hz
+* HbO/HbR relationship validation
+* Raw intensity SNR computation
+* Coefficient of variation computation
+* Motion artifact percentage estimation
+* Global signal correlation analysis
+* CSV export of quality metrics
+* Paper-ready summary generation
 
-* **Indoor Folder:** `/Indoor/sub1/file.snirf`, `/Indoor/sub2/file.snirf`...
-* **Outdoor Folder:** `/Outdoor/sub1/file.snirf`, `/Outdoor/sub2/file.snirf`...
+Processing Pipeline
 
-The script uses alphabetical sorting to ensure that subject data is correctly paired between the two conditions for the statistical tests.
+Raw Intensity
+→ Optical Density Conversion
+→ Notch Filtering
+→ Bandpass Filtering
+→ Motion Correction (TDDR)
+→ Beer–Lambert Law Conversion
+→ Baseline Correction
+→ Downsampling to 10 Hz
+→ Quality Assessment and Validation
 
----
+Signal Quality Metrics
 
-### Key Features
+The following metrics are computed at the raw intensity level before hemoglobin conversion:
 
-* **Nested Directory Traversal:** Automatically searches through subject subfolders to locate `.snirf` files.
-* **Hemodynamic Extraction:** Filters and extracts mean values for both **HbO** and **HbR** channels using MNE-Python.
-* **Dual Statistical Testing:**
-    * **Paired T-test:** For parametric analysis of mean differences.
-    * **Wilcoxon Signed-Rank Test:** For non-parametric analysis, providing robustness against non-normal distributions or outliers.
-* **Data Visualization:** Generates boxplots for each chromophore to visualize medians, quartiles, and variance across conditions.
+* Signal-to-Noise Ratio (SNR)
+* Coefficient of Variation (CV)
+* Motion Artifact Percentage
 
----
+Additional validation metrics include:
 
-### Requirements
+* HbO mean and standard deviation
+* HbR mean and standard deviation
+* HbO–HbR correlation
+* Global signal correlation
 
-The following dependencies are required to run the analysis:
+Directory Structure
 
-* **mne** & **mne-nirs**: For SNIRF file handling and NIRS processing.
-* **numpy**: For numerical operations and array management.
-* **scipy**: For performing paired statistical tests.
-* **matplotlib**: For generating distribution boxplots.
+Example dataset structure:
 
-Install them via pip:
-```bash
-pip install mne mne-nirs numpy scipy matplotlib
-```
+data/
+├── subject_01/
+│   ├── indoor/
+│   │   └── recording.snirf
+│   └── outdoor/
+│       └── recording.snirf
+├── subject_02/
+│   ├── indoor/
+│   └── outdoor/
 
----
+Files are automatically categorized using:
 
-### Usage
+* "indoor" in path
+* "outdoor" in path
 
-1. **Configure Paths:** Update the `indoor_folder` and `outdoor_folder` variables in the script to match your local or Drive directory.
-2. **Execute:** Run the script. It will print the Mean ± Standard Deviation for both conditions, output the $p$-values for both statistical tests, and display the distribution plots.
-3. **Interpret Results:** A $p < 0.05$ typically indicates a significant difference in hemodynamic activity between the Indoor and Outdoor environments.
+Installation
 
----
+Create a Python environment and install dependencies:
 
-### Statistical Metrics Provided
+pip install numpy pandas scipy tqdm mne mne-nirs
 
-* **Descriptive Stats:** Mean and Standard Deviation for both environments.
-* **T-Statistic & P-Value:** Results from the parametric Paired T-test.
-* **W-Statistic & P-Value:** Results from the non-parametric Wilcoxon Signed-Rank test.
+Required Libraries
+
+* Python 3.9+
+* numpy
+* pandas
+* scipy
+* tqdm
+* mne
+* mne-nirs
+
+Usage
+
+Place all SNIRF files inside the data directory.
+
+Run:
+
+python main.py
+
+Outputs
+
+The pipeline generates:
+
+* indoor_quality_metrics.csv
+* outdoor_quality_metrics.csv
+* paper_summary.txt
+
+Example Output
+
+Raw Intensity SNR (dB): 27.68 ± 1.72
+Coefficient of Variation: 0.0455 ± 0.0096
+Motion Artifact Percentage: 0.02% ± 0.02%
+HbO-HbR Correlation: -0.021
+Global Signal Correlation: 0.344
+
+Interpretation
+
+* Higher SNR indicates better signal quality
+* Lower coefficient of variation indicates more stable recordings
+* Lower motion artifact percentage indicates fewer transient artifacts
+* Moderate negative or near-zero HbO–HbR correlations are more physiologically plausible than strong positive correlations
+* High global signal correlation may indicate systemic physiological contamination
+
+Notes
+
+* Signal quality metrics are computed on raw intensity data prior to optical density and hemoglobin conversion.
+* The implementation uses the MNE-fNIRS framework for preprocessing.
+* The code was designed for reproducibility and reviewer transparency.
+
+Citation
+
+If this repository is used in research, please cite the associated publication.
+
+License
+
+This project is provided for academic and research purposes.
