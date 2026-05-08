@@ -4,9 +4,12 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import mne
 
 from tqdm import tqdm
+from scipy.stats import skew, kurtosis
+from sklearn.preprocessing import MinMaxScaler
 
 from mne.io import read_raw_snirf
 from mne.preprocessing.nirs import (
@@ -15,7 +18,6 @@ from mne.preprocessing.nirs import (
     scalp_coupling_index,
     temporal_derivative_distribution_repair,
 )
-
 
 warnings.filterwarnings("ignore")
 
@@ -29,7 +31,6 @@ ROOT_DIR = r"data"
 LOW_CUT = 0.01
 HIGH_CUT = 0.2
 
-# physiological/systemic frequencies
 NOTCH_FREQ = (0.6, 2.5)
 
 FINAL_SAMPLING_RATE = 10
@@ -41,6 +42,8 @@ CV_THRESHOLD = 0.15
 SNR_THRESHOLD_DB = 20
 
 PPF = 0.1
+
+PLOTS_DIR = "plots"
 
 
 # =============================================================================
@@ -73,6 +76,96 @@ def collect_snirf_files(root_dir):
     print(f"Outdoor Files Found: {len(outdoor_files)}")
 
     return indoor_files, outdoor_files
+
+
+# =============================================================================
+# RAW INTENSITY STATS
+# =============================================================================
+
+def compute_signal_statistics(
+    data,
+    prefix=""
+):
+
+    stats = {}
+
+    flat = data.flatten()
+
+    stats[f"{prefix}Mean"] = np.mean(flat)
+
+    stats[f"{prefix}STD"] = np.std(flat)
+
+    stats[f"{prefix}Min"] = np.min(flat)
+
+    stats[f"{prefix}Max"] = np.max(flat)
+
+    stats[f"{prefix}Median"] = np.median(flat)
+
+    stats[f"{prefix}Skewness"] = skew(flat)
+
+    stats[f"{prefix}Kurtosis"] = kurtosis(flat)
+
+    return stats
+
+
+# =============================================================================
+# HbO HbR STATS
+# =============================================================================
+
+def compute_hbo_hbr_statistics(
+    data,
+    ch_names,
+    prefix=""
+):
+
+    stats = {}
+
+    hbo_indices = []
+    hbr_indices = []
+
+    for idx, name in enumerate(ch_names):
+
+        lower_name = name.lower()
+
+        if "hbo" in lower_name:
+            hbo_indices.append(idx)
+
+        elif "hbr" in lower_name:
+            hbr_indices.append(idx)
+
+    # -------------------------------------------------------------------------
+    # HbO
+    # -------------------------------------------------------------------------
+
+    if len(hbo_indices) > 0:
+
+        hbo = data[hbo_indices].flatten()
+
+        stats[f"{prefix}HbO_Mean"] = np.mean(hbo)
+
+        stats[f"{prefix}HbO_STD"] = np.std(hbo)
+
+        stats[f"{prefix}HbO_Skewness"] = skew(hbo)
+
+        stats[f"{prefix}HbO_Kurtosis"] = kurtosis(hbo)
+
+    # -------------------------------------------------------------------------
+    # HbR
+    # -------------------------------------------------------------------------
+
+    if len(hbr_indices) > 0:
+
+        hbr = data[hbr_indices].flatten()
+
+        stats[f"{prefix}HbR_Mean"] = np.mean(hbr)
+
+        stats[f"{prefix}HbR_STD"] = np.std(hbr)
+
+        stats[f"{prefix}HbR_Skewness"] = skew(hbr)
+
+        stats[f"{prefix}HbR_Kurtosis"] = kurtosis(hbr)
+
+    return stats
 
 
 # =============================================================================
@@ -110,11 +203,15 @@ def compute_scalp_coupling(raw):
 
     try:
 
-        sci = scalp_coupling_index(raw)
+        od = optical_density(raw.copy())
+
+        sci = scalp_coupling_index(od)
 
         return np.mean(sci), sci
 
-    except:
+    except Exception as e:
+
+        print(f"SCI failed: {e}")
 
         return np.nan, None
 
@@ -140,10 +237,21 @@ def estimate_motion_artifact_percentage(raw):
 
 
 # =============================================================================
-# PREPROCESSING PIPELINE
+# PREPROCESSING
 # =============================================================================
 
 def preprocess_fnirs(raw):
+
+    # -------------------------------------------------------------------------
+    # RAW STATS
+    # -------------------------------------------------------------------------
+
+    raw_data = raw.get_data().copy()
+
+    raw_stats = compute_signal_statistics(
+        raw_data,
+        prefix="Raw_"
+    )
 
     # -------------------------------------------------------------------------
     # OPTICAL DENSITY
@@ -186,7 +294,6 @@ def preprocess_fnirs(raw):
         ppf=PPF
     )
 
-
     # -------------------------------------------------------------------------
     # DOWNSAMPLE
     # -------------------------------------------------------------------------
@@ -215,11 +322,55 @@ def preprocess_fnirs(raw):
 
     raw._data = data - baseline
 
-    return raw
+    # -------------------------------------------------------------------------
+    # CLEANED HbO HbR STATS
+    # -------------------------------------------------------------------------
+
+    cleaned_data = raw.get_data().copy()
+
+    cleaned_stats = compute_hbo_hbr_statistics(
+        cleaned_data,
+        raw.ch_names,
+        prefix="Cleaned_"
+    )
+
+    # -------------------------------------------------------------------------
+    # MIN MAX SCALING
+    # -------------------------------------------------------------------------
+
+    scaler = MinMaxScaler()
+
+    scaled_data = np.zeros_like(cleaned_data)
+
+    for ch in range(cleaned_data.shape[0]):
+
+        scaled_data[ch] = scaler.fit_transform(
+            cleaned_data[ch].reshape(-1, 1)
+        ).flatten()
+
+    scaled_stats = compute_hbo_hbr_statistics(
+        scaled_data,
+        raw.ch_names,
+        prefix="Scaled_"
+    )
+
+    # -------------------------------------------------------------------------
+    # COMBINE
+    # -------------------------------------------------------------------------
+
+    all_stats = {}
+
+    all_stats.update(raw_stats)
+
+    all_stats.update(cleaned_stats)
+
+    all_stats.update(scaled_stats)
+
+    return raw, all_stats
 
 
 # =============================================================================
-# GLOBAL SIGNAL CORRELATION
+# GLOBAL SIGNAL
 # =============================================================================
 
 def compute_global_correlation(raw):
@@ -270,6 +421,7 @@ def validate_hbo_hbr_relationship(raw):
         return {}
 
     hbo = data[hbo_indices]
+
     hbr = data[hbr_indices]
 
     correlations = []
@@ -302,19 +454,112 @@ def validate_hbo_hbr_relationship(raw):
 
 
 # =============================================================================
+# PLOTTING
+# =============================================================================
+
+def plot_hbo_hbr_signals(
+    raw,
+    save_dir,
+    subject_name,
+    group_name
+):
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    data = raw.get_data()
+
+    ch_names = raw.ch_names
+
+    times = raw.times
+
+    hbo_indices = []
+    hbr_indices = []
+
+    for idx, name in enumerate(ch_names):
+
+        lower_name = name.lower()
+
+        if "hbo" in lower_name:
+            hbo_indices.append(idx)
+
+        elif "hbr" in lower_name:
+            hbr_indices.append(idx)
+
+    if len(hbo_indices) == 0 or len(hbr_indices) == 0:
+
+        return
+
+    hbo_mean = np.mean(
+        data[hbo_indices],
+        axis=0
+    )
+
+    hbr_mean = np.mean(
+        data[hbr_indices],
+        axis=0
+    )
+
+    plt.figure(figsize=(15, 6))
+
+    plt.plot(
+        times,
+        hbo_mean,
+        linewidth=2,
+        label=(
+            f"HbO | "
+            f"Mean={np.mean(hbo_mean):.6f} | "
+            f"STD={np.std(hbo_mean):.6f}"
+        )
+    )
+
+    plt.plot(
+        times,
+        hbr_mean,
+        linewidth=2,
+        label=(
+            f"HbR | "
+            f"Mean={np.mean(hbr_mean):.6f} | "
+            f"STD={np.std(hbr_mean):.6f}"
+        )
+    )
+
+    plt.xlabel("Time (s)")
+
+    plt.ylabel("Amplitude")
+
+    plt.title(
+        f"{group_name} | {subject_name} | "
+        f"Cleaned Mean HbO/HbR Signals"
+    )
+
+    plt.legend()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        os.path.join(
+            save_dir,
+            f"{subject_name}_cleaned_mean.png"
+        ),
+        dpi=300
+    )
+
+    plt.close()
+
+
+# =============================================================================
 # PROCESS SINGLE FILE
 # =============================================================================
 
 def process_single_file(file_path):
 
     print("\n=================================================")
-    print(f"Processing File:")
-    print(file_path)
-    print("=================================================")
 
-    # -------------------------------------------------------------------------
-    # LOAD
-    # -------------------------------------------------------------------------
+    print(f"Processing File:")
+
+    print(file_path)
+
+    print("=================================================")
 
     print("\nReading SNIRF file...")
 
@@ -325,7 +570,7 @@ def process_single_file(file_path):
     )
 
     # -------------------------------------------------------------------------
-    # RAW QUALITY METRICS
+    # QUALITY METRICS
     # -------------------------------------------------------------------------
 
     print("Computing Raw Quality Metrics...")
@@ -344,10 +589,35 @@ def process_single_file(file_path):
 
     print("Running Preprocessing Pipeline...")
 
-    raw = preprocess_fnirs(raw)
+    raw, preprocessing_stats = preprocess_fnirs(raw)
 
     # -------------------------------------------------------------------------
-    # HbO HbR VALIDATION
+    # SUBJECT
+    # -------------------------------------------------------------------------
+
+    subject_name = os.path.basename(
+        file_path
+    ).replace(".snirf", "")
+
+    group_name = (
+        "INDOOR"
+        if "indoor" in file_path.lower()
+        else "OUTDOOR"
+    )
+
+    # -------------------------------------------------------------------------
+    # PLOT
+    # -------------------------------------------------------------------------
+
+    plot_hbo_hbr_signals(
+        raw=raw,
+        save_dir=PLOTS_DIR,
+        subject_name=subject_name,
+        group_name=group_name
+    )
+
+    # -------------------------------------------------------------------------
+    # VALIDATION
     # -------------------------------------------------------------------------
 
     print("Validating HbO and HbR Relationship...")
@@ -363,7 +633,7 @@ def process_single_file(file_path):
     global_corr = compute_global_correlation(raw)
 
     # -------------------------------------------------------------------------
-    # QUALITY FLAGS
+    # FLAGS
     # -------------------------------------------------------------------------
 
     snr_pass = raw_snr_mean >= SNR_THRESHOLD_DB
@@ -397,6 +667,8 @@ def process_single_file(file_path):
 
     output.update(validation_results)
 
+    output.update(preprocessing_stats)
+
     return output
 
 
@@ -407,7 +679,9 @@ def process_single_file(file_path):
 def process_group(file_list, group_name):
 
     print("\n=================================================")
+
     print(f"PROCESSING GROUP: {group_name}")
+
     print("=================================================")
 
     all_results = []
@@ -426,52 +700,72 @@ def process_group(file_list, group_name):
         except Exception as e:
 
             print(f"\nFailed Processing:")
+
             print(file_path)
+
             print(e)
 
     df = pd.DataFrame(all_results)
 
-    # -------------------------------------------------------------------------
-    # SUMMARY
-    # -------------------------------------------------------------------------
-
-    print("\n=================================================")
-    print(f"{group_name} SUMMARY")
-    print("=================================================")
-
-    if len(df) > 0:
-
-        print(df.describe())
-
-        total_subjects = len(df)
-
-        snr_pass_count = np.sum(df["SNR_Pass"])
-
-        cv_pass_count = np.sum(df["CV_Pass"])
-
-        sci_pass_count = np.sum(df["SCI_Pass"])
-
-        print("\nQuality Summary")
-        print("----------------------------")
-
-        print(f"Total Subjects : {total_subjects}")
-
-        print(
-            f"SNR Pass        : "
-            f"{snr_pass_count}/{total_subjects}"
-        )
-
-        print(
-            f"CV Pass         : "
-            f"{cv_pass_count}/{total_subjects}"
-        )
-
-        print(
-            f"SCI Pass        : "
-            f"{sci_pass_count}/{total_subjects}"
-        )
-
     return df
+
+
+# =============================================================================
+# SUMMARY HELPERS
+# =============================================================================
+
+def add_hbo_hbr_summary(
+    text,
+    df,
+    prefix,
+    title
+):
+
+    text.append("")
+
+    text.append(title)
+
+    text.append(
+        f"{prefix} HbO Mean: "
+        f"{df[f'{prefix}_HbO_Mean'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbO STD: "
+        f"{df[f'{prefix}_HbO_STD'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbO Skewness: "
+        f"{df[f'{prefix}_HbO_Skewness'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbO Kurtosis: "
+        f"{df[f'{prefix}_HbO_Kurtosis'].mean():.6f}"
+    )
+
+    text.append("")
+
+    text.append(
+        f"{prefix} HbR Mean: "
+        f"{df[f'{prefix}_HbR_Mean'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbR STD: "
+        f"{df[f'{prefix}_HbR_STD'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbR Skewness: "
+        f"{df[f'{prefix}_HbR_Skewness'].mean():.6f}"
+    )
+
+    text.append(
+        f"{prefix} HbR Kurtosis: "
+        f"{df[f'{prefix}_HbR_Kurtosis'].mean():.6f}"
+    )
 
 
 # =============================================================================
@@ -480,14 +774,12 @@ def process_group(file_list, group_name):
 
 def generate_paper_summary(df, group_name):
 
-    if len(df) == 0:
-
-        return f"\nNo valid files found for {group_name}"
-
     text = []
 
     text.append("\n=================================================")
+
     text.append(f"PAPER SUMMARY : {group_name}")
+
     text.append("=================================================")
 
     text.append(
@@ -515,26 +807,6 @@ def generate_paper_summary(df, group_name):
     )
 
     text.append(
-        f"HbO Mean: "
-        f"{df['HbO_Mean'].mean():.6f}"
-    )
-
-    text.append(
-        f"HbR Mean: "
-        f"{df['HbR_Mean'].mean():.6f}"
-    )
-
-    text.append(
-        f"HbO STD: "
-        f"{df['HbO_STD'].mean():.6f}"
-    )
-
-    text.append(
-        f"HbR STD: "
-        f"{df['HbR_STD'].mean():.6f}"
-    )
-
-    text.append(
         f"HbO-HbR Correlation: "
         f"{df['HbO_HbR_Correlation_Mean'].mean():.3f}"
     )
@@ -542,6 +814,56 @@ def generate_paper_summary(df, group_name):
     text.append(
         f"Global Signal Correlation: "
         f"{df['Global_Correlation'].mean():.3f}"
+    )
+
+    # -------------------------------------------------------------------------
+    # RAW
+    # -------------------------------------------------------------------------
+
+    text.append("")
+
+    text.append("RAW INTENSITY STATISTICS")
+
+    text.append(
+        f"Raw Mean: "
+        f"{df['Raw_Mean'].mean():.6f}"
+    )
+
+    text.append(
+        f"Raw STD: "
+        f"{df['Raw_STD'].mean():.6f}"
+    )
+
+    text.append(
+        f"Raw Skewness: "
+        f"{df['Raw_Skewness'].mean():.6f}"
+    )
+
+    text.append(
+        f"Raw Kurtosis: "
+        f"{df['Raw_Kurtosis'].mean():.6f}"
+    )
+
+    # -------------------------------------------------------------------------
+    # CLEANED
+    # -------------------------------------------------------------------------
+
+    add_hbo_hbr_summary(
+        text,
+        df,
+        "Cleaned",
+        "CLEANED HbO HbR STATISTICS"
+    )
+
+    # -------------------------------------------------------------------------
+    # SCALED
+    # -------------------------------------------------------------------------
+
+    add_hbo_hbr_summary(
+        text,
+        df,
+        "Scaled",
+        "SCALED HbO HbR STATISTICS"
     )
 
     return "\n".join(text)
@@ -552,6 +874,8 @@ def generate_paper_summary(df, group_name):
 # =============================================================================
 
 def main():
+
+    os.makedirs(PLOTS_DIR, exist_ok=True)
 
     indoor_files, outdoor_files = collect_snirf_files(ROOT_DIR)
 
@@ -564,10 +888,7 @@ def main():
         "INDOOR"
     )
 
-    indoor_df.to_csv(
-        "indoor_quality_metrics.csv",
-        index=False
-    )
+    indoor_df["Environment"] = "Indoor"
 
     # -------------------------------------------------------------------------
     # OUTDOOR
@@ -578,13 +899,32 @@ def main():
         "OUTDOOR"
     )
 
-    outdoor_df.to_csv(
-        "outdoor_quality_metrics.csv",
+    outdoor_df["Environment"] = "Outdoor"
+
+    # -------------------------------------------------------------------------
+    # COMBINE
+    # -------------------------------------------------------------------------
+
+    combined_df = pd.concat(
+        [indoor_df, outdoor_df],
+        ignore_index=True
+    )
+
+    combined_df["Subject"] = combined_df["File"].apply(
+        lambda x: os.path.basename(x).replace(".snirf", "")
+    )
+
+    # -------------------------------------------------------------------------
+    # SAVE CSV
+    # -------------------------------------------------------------------------
+
+    combined_df.to_csv(
+        "fnirs_quality_metrics_all.csv",
         index=False
     )
 
     # -------------------------------------------------------------------------
-    # FINAL PAPER SUMMARIES
+    # SUMMARIES
     # -------------------------------------------------------------------------
 
     indoor_summary = generate_paper_summary(
@@ -602,19 +942,24 @@ def main():
     print(outdoor_summary)
 
     # -------------------------------------------------------------------------
-    # SAVE PAPER SUMMARY
+    # SAVE SUMMARY
     # -------------------------------------------------------------------------
 
     with open("paper_summary.txt", "w") as f:
 
         f.write(indoor_summary)
+
         f.write("\n\n")
+
         f.write(outdoor_summary)
 
     print("\nSaved:")
-    print("1. indoor_quality_metrics.csv")
-    print("2. outdoor_quality_metrics.csv")
-    print("3. paper_summary.txt")
+
+    print("1. fnirs_quality_metrics_all.csv")
+
+    print("2. paper_summary.txt")
+
+    print("3. plots/")
 
 
 # =============================================================================
