@@ -1,72 +1,104 @@
-fNIRS Indoor and Outdoor Signal Quality Analysis
+fNIRS Signal Quality and Preprocessing Pipeline
 
-This repository contains the preprocessing and quality assessment pipeline used for evaluating indoor and outdoor fNIRS recordings stored in SNIRF format.
+This repository contains the code used for preprocessing, quality assessment, and validation of indoor and outdoor fNIRS recordings in SNIRF format.
 
-The implementation focuses on:
+The implementation was developed to provide a transparent and reproducible preprocessing workflow for evaluating:
 
-* preprocessing transparency
-* HbO and HbR validation
-* raw intensity signal quality assessment
-* motion artifact estimation
-* global signal contamination analysis
-* indoor versus outdoor comparison
+* HbO and HbR signal validity
+* raw signal quality
+* motion artifacts
+* global/systemic signal contamination
+* preprocessing effects on signal distributions
 
-The pipeline was developed in response to reviewer concerns regarding:
-
-* validity of HbR signals
-* preprocessing correctness
-* potential systemic/global contamination
-* interpretation of signal quality metrics
-
-Features
-
-* Automatic recursive SNIRF file loading
-* Indoor and outdoor file separation using file paths
-* Optical density conversion
-* Notch filtering
-* Bandpass filtering
-* Motion artifact correction using TDDR
-* Beer–Lambert conversion
-* Baseline correction
-* Downsampling to 10 Hz
-* HbO/HbR relationship validation
-* Raw intensity SNR computation
-* Coefficient of variation computation
-* Motion artifact percentage estimation
-* Global signal correlation analysis
-* CSV export of quality metrics
-* Paper-ready summary generation
-
-Processing Pipeline
+Implemented Processing Pipeline
 
 Raw Intensity
 → Optical Density Conversion
 → Notch Filtering
 → Bandpass Filtering
-→ Motion Correction (TDDR)
+→ Motion Correction using TDDR
 → Beer–Lambert Law Conversion
-→ Baseline Correction
 → Downsampling to 10 Hz
-→ Quality Assessment and Validation
+→ Baseline Correction
+→ Signal Validation and Quality Assessment
 
-Signal Quality Metrics
+Implemented Features
 
-The following metrics are computed at the raw intensity level before hemoglobin conversion:
+* Recursive SNIRF file loading
+* Automatic indoor/outdoor file separation
+* Optical density conversion
+* Notch filtering
+* Bandpass filtering
+* Motion artifact correction
+* Beer–Lambert conversion
+* Baseline correction
+* Downsampling
+* HbO/HbR validation
+* Raw intensity SNR computation
+* Coefficient of variation analysis
+* Motion artifact percentage estimation
+* Scalp coupling index computation
+* Global signal correlation analysis
+* Min-max scaling analysis
+* Statistical distribution analysis
+* Automatic CSV export
+* Automatic visualization generation
 
-* Signal-to-Noise Ratio (SNR)
-* Coefficient of Variation (CV)
-* Motion Artifact Percentage
+Computed Metrics
 
-Additional validation metrics include:
+Raw Intensity Metrics
 
-* HbO mean and standard deviation
-* HbR mean and standard deviation
+* Signal-to-noise ratio (SNR)
+* Coefficient of variation (CV)
+* Motion artifact percentage
+* Signal distribution statistics
+
+HbO/HbR Validation Metrics
+
+* HbO mean
+* HbR mean
+* HbO standard deviation
+* HbR standard deviation
 * HbO–HbR correlation
 * Global signal correlation
 
-Directory Structure
+Distribution Analysis
+For raw, cleaned, and scaled signals:
 
-Example dataset structure:
+* mean
+* standard deviation
+* skewness
+* kurtosis
+
+Generated Outputs
+
+* fnirs_quality_metrics_all.csv
+* paper_summary.txt
+* cleaned HbO/HbR plots
+
+Dependencies
+
+* Python 3.9+
+* NumPy
+* Pandas
+* SciPy
+* Scikit-learn
+* Matplotlib
+* MNE
+* MNE-NIRS
+* tqdm
+
+Installation
+
+pip install numpy pandas scipy scikit-learn matplotlib mne mne-nirs tqdm
+
+Usage
+
+Place SNIRF files inside the data directory and run:
+
+python main.py
+
+Dataset Structure
 
 data/
 ├── subject_01/
@@ -74,73 +106,18 @@ data/
 │   │   └── recording.snirf
 │   └── outdoor/
 │       └── recording.snirf
-├── subject_02/
-│   ├── indoor/
-│   └── outdoor/
 
-Files are automatically categorized using:
+The code automatically separates files using:
 
 * "indoor" in path
 * "outdoor" in path
 
-Installation
-
-Create a Python environment and install dependencies:
-
-pip install numpy pandas scipy tqdm mne mne-nirs
-
-Required Libraries
-
-* Python 3.9+
-* numpy
-* pandas
-* scipy
-* tqdm
-* mne
-* mne-nirs
-
-Usage
-
-Place all SNIRF files inside the data directory.
-
-Run:
-
-python main.py
-
-Outputs
-
-The pipeline generates:
-
-* indoor_quality_metrics.csv
-* outdoor_quality_metrics.csv
-* paper_summary.txt
-
-Example Output
-
-Raw Intensity SNR (dB): 27.68 ± 1.72
-Coefficient of Variation: 0.0455 ± 0.0096
-Motion Artifact Percentage: 0.02% ± 0.02%
-HbO-HbR Correlation: -0.021
-Global Signal Correlation: 0.344
-
-Interpretation
-
-* Higher SNR indicates better signal quality
-* Lower coefficient of variation indicates more stable recordings
-* Lower motion artifact percentage indicates fewer transient artifacts
-* Moderate negative or near-zero HbO–HbR correlations are more physiologically plausible than strong positive correlations
-* High global signal correlation may indicate systemic physiological contamination
-
 Notes
 
-* Signal quality metrics are computed on raw intensity data prior to optical density and hemoglobin conversion.
-* The implementation uses the MNE-fNIRS framework for preprocessing.
-* The code was designed for reproducibility and reviewer transparency.
+* Signal quality metrics are computed at the raw intensity stage before hemoglobin conversion.
+* HbO and HbR analyses are performed after Beer–Lambert conversion.
+* Visualizations are generated using cleaned hemoglobin signals only.
+* The implementation uses the MNE-fNIRS framework for preprocessing and validation.
 
-Citation
 
-If this repository is used in research, please cite the associated publication.
-
-License
-
-This project is provided for academic and research purposes.
+Provided for academic and research purposes.
